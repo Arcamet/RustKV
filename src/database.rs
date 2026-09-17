@@ -243,4 +243,24 @@ mod tests {
         );
         assert_eq!(database.get(b"session").unwrap(), None);
     }
+
+    #[test]
+    fn recovery_does_not_resurrect_an_expired_persistent_value() {
+        use crate::persistence::{AppendLog, LogRecord};
+
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("data.aof");
+        let (mut log, _) = AppendLog::open(&path).unwrap();
+        log.append(&LogRecord::Set {
+            key: b"expired".to_vec(),
+            value: b"value".to_vec(),
+            expires_at_ms: Some(1),
+        })
+        .unwrap();
+        drop(log);
+
+        let database = Database::open(&path, StoreLimits::default()).unwrap();
+        assert_eq!(database.get(b"expired").unwrap(), None);
+        assert_eq!(database.key_count().unwrap(), 0);
+    }
 }
