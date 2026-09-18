@@ -1,5 +1,6 @@
 use std::net::TcpStream;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tracing::{debug, warn};
 
@@ -9,8 +10,16 @@ use crate::protocol::{Response, read_command, write_response};
 
 use super::execute;
 
-pub(crate) fn handle(mut stream: TcpStream, database: Arc<Database>, metrics: Arc<Metrics>) {
+pub(crate) fn handle(
+    mut stream: TcpStream,
+    database: Arc<Database>,
+    metrics: Arc<Metrics>,
+    shutdown: Arc<AtomicBool>,
+) {
     loop {
+        if shutdown.load(Ordering::Acquire) {
+            return;
+        }
         match read_command(&mut stream) {
             Ok(Some(command)) => {
                 let response = execute(&database, &metrics, command);
@@ -20,6 +29,7 @@ pub(crate) fn handle(mut stream: TcpStream, database: Arc<Database>, metrics: Ar
                 }
             }
             Ok(None) => return,
+            Err(crate::protocol::ProtocolError::Idle) => continue,
             Err(error) => {
                 metrics.record_error();
                 warn!(%error, "rejecting malformed client frame");

@@ -93,6 +93,7 @@ impl Server {
         info!(%address, max_connections = self.max_connections, "RustKV server listening");
         let mut workers = Vec::new();
         while !shutdown.load(Ordering::Acquire) {
+            reap_finished(&mut workers)?;
             match self.listener.accept() {
                 Ok((mut stream, peer)) => {
                     if self.metrics.active_connections() >= self.max_connections {
@@ -108,16 +109,23 @@ impl Server {
                     }
                     stream.set_nonblocking(false)?;
                     stream.set_nodelay(true)?;
+                    stream.set_read_timeout(Some(Duration::from_millis(100)))?;
                     self.metrics.connection_opened();
                     let database = Arc::clone(&self.database);
                     let metrics = Arc::clone(&self.metrics);
-                    let worker = thread::Builder::new()
+                    let worker_shutdown = Arc::clone(&shutdown);
+                    let worker = match thread::Builder::new()
                         .name(format!("rustkv-client-{peer}"))
                         .spawn(move || {
                             let _guard = ConnectionGuard::new(Arc::clone(&metrics), peer);
-                            connection::handle(stream, database, metrics);
-                        })
-                        .map_err(ServerError::Io)?;
+                            connection::handle(stream, database, metrics, worker_shutdown);
+                        }) {
+                        Ok(handle) => Worker { handle },
+                        Err(error) => {
+                            self.metrics.connection_closed();
+                            return Err(ServerError::Io(error));
+                        }
+                    };
                     workers.push(worker);
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -127,15 +135,35 @@ impl Server {
                 Err(error) => return Err(ServerError::Io(error)),
             }
         }
+        debug!(workers = workers.len(), "shutdown signal observed");
         join_workers(workers)?;
         info!("RustKV server stopped");
         Ok(())
     }
 }
 
-fn join_workers(workers: Vec<JoinHandle<()>>) -> Result<(), ServerError> {
+struct Worker {
+    handle: JoinHandle<()>,
+}
+
+fn reap_finished(workers: &mut Vec<Worker>) -> Result<(), ServerError> {
+    let mut index = 0;
+    while index < workers.len() {
+        if workers[index].handle.is_finished() {
+            let worker = workers.swap_remove(index);
+            if worker.handle.join().is_err() {
+                return Err(ServerError::WorkerPanicked);
+            }
+        } else {
+            index += 1;
+        }
+    }
+    Ok(())
+}
+
+fn join_workers(workers: Vec<Worker>) -> Result<(), ServerError> {
     for worker in workers {
-        if worker.join().is_err() {
+        if worker.handle.join().is_err() {
             return Err(ServerError::WorkerPanicked);
         }
     }

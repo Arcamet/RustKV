@@ -8,6 +8,7 @@ license = "MIT"
 
 [dependencies]
 crc32fast = "1"
+ctrlc = "3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 

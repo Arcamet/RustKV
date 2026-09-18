@@ -24,6 +24,7 @@ const RESPONSE_ERROR: u8 = 255;
 #[derive(Debug)]
 pub enum ProtocolError {
     Io(io::Error),
+    Idle,
     UnexpectedEof,
     EmptyFrame,
     FrameTooLarge { actual: usize, max: usize },
@@ -39,6 +40,7 @@ impl fmt::Display for ProtocolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(error) => write!(f, "protocol I/O error: {error}"),
+            Self::Idle => f.write_str("no frame is currently available"),
             Self::UnexpectedEof => f.write_str("unexpected EOF inside a frame"),
             Self::EmptyFrame => f.write_str("empty frame"),
             Self::FrameTooLarge { actual, max } => {
@@ -309,6 +311,14 @@ fn read_frame<R: Read>(reader: &mut R) -> Result<Option<Vec<u8>>, ProtocolError>
                 ));
             }
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                return Err(ProtocolError::Idle);
+            }
             Err(error) => return Err(ProtocolError::Io(error)),
         }
     }

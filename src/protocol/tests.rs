@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::io::{self, Read};
 use std::time::Duration;
 
 use super::{
@@ -149,4 +150,18 @@ fn writer_rejects_fields_beyond_the_protocol_limits() {
         error,
         ProtocolError::ValueTooLarge { actual: 1_000_001 }
     ));
+}
+
+#[test]
+fn timeout_before_a_frame_is_reported_as_idle_not_malformed_input() {
+    struct IdleReader;
+
+    impl Read for IdleReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::WouldBlock, "idle"))
+        }
+    }
+
+    let error = read_command(&mut IdleReader).unwrap_err();
+    assert!(matches!(error, ProtocolError::Idle));
 }
