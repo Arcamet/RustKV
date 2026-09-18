@@ -165,3 +165,21 @@ fn timeout_before_a_frame_is_reported_as_idle_not_malformed_input() {
     let error = read_command(&mut IdleReader).unwrap_err();
     assert!(matches!(error, ProtocolError::Idle));
 }
+
+#[test]
+fn writer_rejects_subsecond_ttl_instead_of_truncating_it() {
+    let error = write_command(
+        &mut Vec::new(),
+        &Command::Set {
+            key: b"key".to_vec(),
+            value: b"value".to_vec(),
+            expires_in: Some(Duration::from_millis(1_500)),
+        },
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        ProtocolError::Malformed("TTL must use whole seconds")
+    ));
+}

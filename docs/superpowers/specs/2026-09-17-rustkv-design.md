@@ -71,7 +71,7 @@ Criterion benchmarks measure direct GET/SET and codec throughput. A release-mode
 
 ## Dependencies
 
-Runtime dependencies are limited to `crc32fast`, `tracing`, and `tracing-subscriber`. Development dependencies are `criterion` and `tempfile`. Protocol serialization, CLI parsing, networking, synchronization, and persistence framing use the standard library.
+Runtime dependencies are limited to `crc32fast`, `ctrlc`, `tracing`, and `tracing-subscriber`. Development dependencies are `criterion` and `tempfile`. Protocol serialization, CLI parsing, networking, synchronization, and persistence framing use the standard library; `ctrlc` only bridges the OS signal into the server's tested shutdown flag.
 
 ## Explicit limitations
 
@@ -81,4 +81,3 @@ Runtime dependencies are limited to `crc32fast`, `tracing`, and `tracing-subscri
 - One OS thread per active connection
 - Expired entries may occupy memory until a later mutation or compaction
 - No replication, transactions, online backup, or compatibility guarantee before protocol V1 is frozen
-

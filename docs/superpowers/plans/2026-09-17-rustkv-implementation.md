@@ -6,7 +6,7 @@
 
 **Architecture:** A synchronous standard-library TCP server dispatches each admitted connection to an OS thread. Threads share `Arc<Database>`; the database coordinates a `RwLock<Store>` and optional `Mutex<AppendLog>`, while a binary codec provides deterministic bounded framing.
 
-**Tech Stack:** Rust 1.98 stable, Cargo, standard library networking/threading/synchronization, crc32fast, tracing, tracing-subscriber, tempfile, Criterion, GitHub Actions.
+**Tech Stack:** Rust 1.98 stable, Cargo, standard library networking/threading/synchronization, crc32fast, ctrlc, tracing, tracing-subscriber, tempfile, Criterion, GitHub Actions.
 
 **Spec:** `docs/superpowers/specs/2026-09-17-rustkv-design.md`
 
@@ -126,4 +126,3 @@
 - [ ] Run `cargo build --release` and `cargo bench --no-run`.
 - [ ] Run a release server/client smoke test and record its output.
 - [ ] Compare every design requirement with code/tests/docs, fix gaps test-first, and inspect `git diff --check` plus `git status`.
-

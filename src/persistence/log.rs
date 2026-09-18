@@ -87,16 +87,18 @@ impl AppendLog {
 
         drop(self.file.take());
         if let Err(error) = fs::rename(&self.path, &backup) {
-            self.file = Some(open_active(&self.path)?);
+            self.file = Some(open_existing(&self.path)?);
             remove_if_exists(&replacement)?;
             return Err(PersistenceError::Io(error));
         }
         if let Err(error) = fs::rename(&replacement, &self.path) {
-            let _ = fs::rename(&backup, &self.path);
-            self.file = Some(open_active(&self.path)?);
+            if let Err(restore_error) = fs::rename(&backup, &self.path) {
+                return Err(PersistenceError::Io(restore_error));
+            }
+            self.file = Some(open_existing(&self.path)?);
             return Err(PersistenceError::Io(error));
         }
-        self.file = Some(open_active(&self.path)?);
+        self.file = Some(open_existing(&self.path)?);
         remove_if_exists(&backup)?;
         sync_parent_directory(&self.path)?;
         Ok(())
@@ -147,13 +149,16 @@ fn open_active(path: &Path) -> Result<File, PersistenceError> {
         .open(path)?)
 }
 
+fn open_existing(path: &Path) -> Result<File, PersistenceError> {
+    Ok(OpenOptions::new().read(true).write(true).open(path)?)
+}
+
 fn resolve_interrupted_compaction(path: &Path) -> Result<Option<PathBuf>, PersistenceError> {
     let replacement = compact_path(path);
     let backup = backup_path(path);
     if path.exists() {
         remove_if_exists(&replacement)?;
-        remove_if_exists(&backup)?;
-        return Ok(None);
+        return Ok(backup.exists().then_some(backup));
     }
     if replacement.exists() {
         fs::rename(&replacement, path)?;

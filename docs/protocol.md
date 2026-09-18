@@ -32,7 +32,7 @@ Byte strings are `[length: u32 big-endian][bytes]`. Keys must contain 1–4,096 
 | `5` | `STATS` | empty |
 | `6` | `SET_EX` | key, value, TTL seconds as `u64` |
 
-TTL seconds must be greater than zero. Fields must consume the complete frame; trailing bytes are rejected.
+TTL uses positive whole seconds; programmatic clients reject subsecond durations rather than truncating them. Fields must consume the complete frame; trailing bytes are rejected.
 
 ## Responses
 
@@ -72,4 +72,3 @@ Errors are deterministic by category. Text explains the instance but clients sho
 All integer parsing is big-endian. Inner lengths use checked arithmetic and must match the containing frame. Unknown versions, request opcodes, response tags, invalid booleans, invalid optional markers, impossible field lengths, and trailing bytes are errors. A malformed request receives one error response when possible, then the server closes that connection.
 
 The server’s read timeout is a shutdown-control mechanism. A timeout before any frame byte is treated as idle. A timeout after part of a frame is treated as a failed frame and closes the connection, limiting slow partial-request resource use.
-

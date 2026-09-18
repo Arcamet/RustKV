@@ -198,3 +198,22 @@ fn existing_live_log_wins_over_a_stale_compaction_file() {
     ));
     assert!(!replacement.exists());
 }
+
+#[test]
+fn corrupt_live_log_does_not_delete_a_valid_compaction_backup() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("data.aof");
+    let backup = backup_path(&path);
+    let (mut log, _) = AppendLog::open(&backup).unwrap();
+    log.append(&LogRecord::Set {
+        key: b"safe".to_vec(),
+        value: b"value".to_vec(),
+        expires_at_ms: None,
+    })
+    .unwrap();
+    drop(log);
+    fs::write(&path, b"BROKEN!!").unwrap();
+
+    assert!(AppendLog::open(&path).is_err());
+    assert!(backup.exists());
+}

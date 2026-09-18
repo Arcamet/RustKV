@@ -92,6 +92,9 @@ pub fn write_command<W: Write>(writer: &mut W, command: &Command) -> Result<(), 
                     if duration.is_zero() {
                         return Err(ProtocolError::Malformed("TTL must be greater than zero"));
                     }
+                    if duration.subsec_nanos() != 0 {
+                        return Err(ProtocolError::Malformed("TTL must use whole seconds"));
+                    }
                     payload.push(OP_SET_EX);
                     put_bytes(&mut payload, key)?;
                     put_bytes(&mut payload, value)?;

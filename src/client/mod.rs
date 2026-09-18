@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::{TcpStream, ToSocketAddrs};
 
 use crate::protocol::{Command, ProtocolError, Response, read_response, write_command};
 
@@ -10,7 +10,6 @@ pub enum ClientError {
     Io(io::Error),
     Protocol(ProtocolError),
     ServerClosed,
-    AddressNotResolved,
 }
 
 impl fmt::Display for ClientError {
@@ -19,7 +18,6 @@ impl fmt::Display for ClientError {
             Self::Io(error) => write!(f, "client I/O error: {error}"),
             Self::Protocol(error) => write!(f, "client protocol error: {error}"),
             Self::ServerClosed => f.write_str("server closed before sending a response"),
-            Self::AddressNotResolved => f.write_str("server address did not resolve"),
         }
     }
 }
@@ -56,10 +54,6 @@ impl Client {
         let stream = TcpStream::connect(address)?;
         stream.set_nodelay(true)?;
         Ok(Self { stream })
-    }
-
-    pub fn connect_addr(address: SocketAddr) -> Result<Self, ClientError> {
-        Self::connect(address)
     }
 
     pub fn execute(&mut self, command: &Command) -> Result<Response, ClientError> {
