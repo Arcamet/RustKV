@@ -121,11 +121,7 @@ impl Database {
             let mut log = log
                 .lock()
                 .map_err(|_| DatabaseError::LockPoisoned("append log"))?;
-            log.append(&LogRecord::Set {
-                key: key.clone(),
-                value: value.clone(),
-                expires_at_ms,
-            })?;
+            log.append_set(&key, &value, expires_at_ms)?;
         }
         store.set(key, value, expires_at_ms)?;
         Ok(())
@@ -161,7 +157,7 @@ impl Database {
             let mut log = log
                 .lock()
                 .map_err(|_| DatabaseError::LockPoisoned("append log"))?;
-            log.append(&LogRecord::Delete { key: key.to_vec() })?;
+            log.append_delete(key)?;
         }
         store.delete(key, now_ms)?;
         Ok(existed)
@@ -174,6 +170,23 @@ impl Database {
             .read()
             .map_err(|_| DatabaseError::LockPoisoned("store"))?;
         Ok(store.live_len(now_ms))
+    }
+
+    pub fn compact(&self) -> Result<(), DatabaseError> {
+        let now_ms = now_ms()?;
+        let mut store = self
+            .store
+            .write()
+            .map_err(|_| DatabaseError::LockPoisoned("store"))?;
+        store.purge_expired(now_ms);
+        let snapshot = store.snapshot(now_ms);
+        if let Some(log) = &self.log {
+            let mut log = log
+                .lock()
+                .map_err(|_| DatabaseError::LockPoisoned("append log"))?;
+            log.compact(&snapshot)?;
+        }
+        Ok(())
     }
 }
 
@@ -262,5 +275,32 @@ mod tests {
         let database = Database::open(&path, StoreLimits::default()).unwrap();
         assert_eq!(database.get(b"expired").unwrap(), None);
         assert_eq!(database.key_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn compaction_keeps_only_the_latest_live_state() {
+        use std::fs;
+
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("data.aof");
+        let database = Database::open(&path, StoreLimits::default()).unwrap();
+        for value in 0..10 {
+            database.set(b"key".to_vec(), vec![value], None).unwrap();
+        }
+        database
+            .set(b"deleted".to_vec(), b"value".to_vec(), None)
+            .unwrap();
+        database.delete(b"deleted").unwrap();
+        let before = fs::metadata(&path).unwrap().len();
+
+        database.compact().unwrap();
+        let after = fs::metadata(&path).unwrap().len();
+        assert!(after < before);
+        drop(database);
+
+        let recovered = Database::open(&path, StoreLimits::default()).unwrap();
+        assert_eq!(recovered.get(b"key").unwrap(), Some(vec![9]));
+        assert_eq!(recovered.get(b"deleted").unwrap(), None);
+        assert_eq!(recovered.key_count().unwrap(), 1);
     }
 }

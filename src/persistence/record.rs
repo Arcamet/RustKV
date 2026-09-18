@@ -19,30 +19,14 @@ pub enum LogRecord {
 
 impl LogRecord {
     pub(crate) fn encode(&self) -> Result<Vec<u8>, PersistenceError> {
-        let mut body = Vec::new();
         match self {
             Self::Set {
                 key,
                 value,
                 expires_at_ms,
-            } => {
-                validate_key(key)?;
-                validate_value(value)?;
-                body.push(SET);
-                body.extend_from_slice(&expires_at_ms.unwrap_or(NO_EXPIRY).to_be_bytes());
-                put_lengths(&mut body, key, value)?;
-                body.extend_from_slice(key);
-                body.extend_from_slice(value);
-            }
-            Self::Delete { key } => {
-                validate_key(key)?;
-                body.push(DELETE);
-                body.extend_from_slice(&NO_EXPIRY.to_be_bytes());
-                put_lengths(&mut body, key, &[])?;
-                body.extend_from_slice(key);
-            }
+            } => encode_set(key, value, *expires_at_ms),
+            Self::Delete { key } => encode_delete(key),
         }
-        Ok(body)
     }
 
     pub(crate) fn decode(body: &[u8], offset: u64) -> Result<Self, PersistenceError> {
@@ -86,6 +70,32 @@ impl LogRecord {
             _ => Err(corrupt(offset, "record operation is unknown")),
         }
     }
+}
+
+pub(crate) fn encode_set(
+    key: &[u8],
+    value: &[u8],
+    expires_at_ms: Option<u64>,
+) -> Result<Vec<u8>, PersistenceError> {
+    validate_key(key)?;
+    validate_value(value)?;
+    let mut body = Vec::with_capacity(17 + key.len() + value.len());
+    body.push(SET);
+    body.extend_from_slice(&expires_at_ms.unwrap_or(NO_EXPIRY).to_be_bytes());
+    put_lengths(&mut body, key, value)?;
+    body.extend_from_slice(key);
+    body.extend_from_slice(value);
+    Ok(body)
+}
+
+pub(crate) fn encode_delete(key: &[u8]) -> Result<Vec<u8>, PersistenceError> {
+    validate_key(key)?;
+    let mut body = Vec::with_capacity(17 + key.len());
+    body.push(DELETE);
+    body.extend_from_slice(&NO_EXPIRY.to_be_bytes());
+    put_lengths(&mut body, key, &[])?;
+    body.extend_from_slice(key);
+    Ok(body)
 }
 
 fn validate_key(key: &[u8]) -> Result<(), PersistenceError> {

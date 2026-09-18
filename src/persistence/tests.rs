@@ -4,6 +4,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use tempfile::tempdir;
 
 use super::{AppendLog, LogRecord, PersistenceError};
+use crate::persistence::log::{backup_path, compact_path};
 
 #[test]
 fn appended_records_replay_in_order_after_reopen() {
@@ -111,4 +112,89 @@ fn invalid_file_header_is_rejected() {
 
     let error = AppendLog::open(&path).unwrap_err();
     assert!(matches!(error, PersistenceError::InvalidHeader));
+}
+
+#[test]
+fn interrupted_compaction_promotes_complete_replacement() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("data.aof");
+    let replacement = compact_path(&path);
+    let backup = backup_path(&path);
+    let (mut live, _) = AppendLog::open(&path).unwrap();
+    live.append(&LogRecord::Set {
+        key: b"key".to_vec(),
+        value: b"old".to_vec(),
+        expires_at_ms: None,
+    })
+    .unwrap();
+    drop(live);
+    let (mut compact, _) = AppendLog::open(&replacement).unwrap();
+    compact
+        .append(&LogRecord::Set {
+            key: b"key".to_vec(),
+            value: b"new".to_vec(),
+            expires_at_ms: None,
+        })
+        .unwrap();
+    drop(compact);
+    fs::rename(&path, &backup).unwrap();
+
+    let (_, records) = AppendLog::open(&path).unwrap();
+    assert!(matches!(
+        records.as_slice(),
+        [LogRecord::Set { value, .. }] if value == b"new"
+    ));
+    assert!(!replacement.exists());
+    assert!(!backup.exists());
+}
+
+#[test]
+fn interrupted_compaction_restores_backup_when_no_replacement_exists() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("data.aof");
+    let backup = backup_path(&path);
+    let (mut live, _) = AppendLog::open(&path).unwrap();
+    live.append(&LogRecord::Set {
+        key: b"safe".to_vec(),
+        value: b"value".to_vec(),
+        expires_at_ms: None,
+    })
+    .unwrap();
+    drop(live);
+    fs::rename(&path, &backup).unwrap();
+
+    let (_, records) = AppendLog::open(&path).unwrap();
+    assert_eq!(records.len(), 1);
+    assert!(!backup.exists());
+}
+
+#[test]
+fn existing_live_log_wins_over_a_stale_compaction_file() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("data.aof");
+    let replacement = compact_path(&path);
+    let (mut live, _) = AppendLog::open(&path).unwrap();
+    live.append(&LogRecord::Set {
+        key: b"key".to_vec(),
+        value: b"live".to_vec(),
+        expires_at_ms: None,
+    })
+    .unwrap();
+    drop(live);
+    let (mut stale, _) = AppendLog::open(&replacement).unwrap();
+    stale
+        .append(&LogRecord::Set {
+            key: b"key".to_vec(),
+            value: b"stale".to_vec(),
+            expires_at_ms: None,
+        })
+        .unwrap();
+    drop(stale);
+
+    let (_, records) = AppendLog::open(&path).unwrap();
+    assert!(matches!(
+        records.as_slice(),
+        [LogRecord::Set { value, .. }] if value == b"live"
+    ));
+    assert!(!replacement.exists());
 }
