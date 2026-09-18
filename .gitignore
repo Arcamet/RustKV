@@ -1,0 +1,5 @@
+/target/
+*.aof
+*.aof.compact
+*.aof.backup
+

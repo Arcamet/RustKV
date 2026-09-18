@@ -16,6 +16,14 @@ tracing-subscriber = { version = "0.3", features = ["fmt"] }
 criterion = "0.5"
 tempfile = "3"
 
+[[bench]]
+name = "store"
+harness = false
+
+[[bench]]
+name = "protocol"
+harness = false
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
